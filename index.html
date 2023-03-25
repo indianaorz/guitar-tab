@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.0/css/all.min.css"
+        crossorigin="anonymous">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <title>Guitar Tab Analyzer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #333;
+            color: #eee;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #appBar {
+            background-color: #444;
+            padding: 1rem;
+            width: 100%;
+            box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+
+        textarea,
+        pre,
+        canvas {
+            border-radius: 4px;
+            box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.3);
+            margin-bottom: 1rem;
+        }
+
+        canvas {
+            background-color: #444;
+            border: 1px solid #666;
+        }
+
+        #controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        button {
+            background-color: #3f51b5;
+            color: #eee;
+            border: none;
+            border-radius: 4px;
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            font-size: 1rem;
+            box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.3);
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #283593;
+        }
+
+        button:focus {
+            outline: none;
+        }
+
+        button span,
+        button i {
+            vertical-align: middle;
+        }
+
+        label,
+        input {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        label {
+            margin-right: 0.5rem;
+        }
+    </style>
+</head>
+
+
+<body>
+    <div id="appBar">
+        <h1>Guitar Tab Analyzer</h1>
+
+        <span>
+            <label for="filename">Filename:</label>
+            <input type="text" id="filename" value="guitar.tab">
+            <button id="saveButton" title="Save"><span class="fas fa-save"></span></button>
+            <button id="loadButton" title="Load"><i class="fas fa-folder-open"></i></button>
+        </span>
+    </div>
+    <p>Enter your guitar tab one line at a time:</p>
+    <textarea id="guitarTabInput" rows="6" cols="50"></textarea><br>
+    <div id="controls">
+        <button id="addMoreButton">Add more</button>
+        <button id="clearButton">Clear</button>
+    </div>
+
+    <h2>Results:</h2>
+    <pre id="outputContainer"></pre>
+    <canvas id="guitarNeck" width="3000" height="720"></canvas>
+
+
+    <script>
+        let fullTab = '';
+
+        document.getElementById("addMoreButton").addEventListener("click", function () {
+            const input = document.getElementById("guitarTabInput").value;
+            const processedInput = processTabInput(input);
+            fullTab += processedInput;
+            document.getElementById("guitarTabInput").value = '';
+            const output = analyzeGuitarTab(fullTab);
+            document.getElementById("outputContainer").innerText = JSON.stringify(output, null, 2);
+            drawGuitarNeck(output.noteFrequencies);
+        });
+
+        document.getElementById("clearButton").addEventListener("click", function () {
+            fullTab = '';
+            document.getElementById("guitarTabInput").value = '';
+            document.getElementById("outputContainer").innerText = '';
+        });
+
+        document.getElementById("saveButton").addEventListener("click", function () {
+            const filename = document.getElementById("filename").value || "guitar.tab";
+            const dataStr = "data:text/plain;charset=utf-8," + encodeURIComponent(fullTab);
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", filename);
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        });
+
+        document.getElementById("loadButton").addEventListener("click", function () {
+            const fileInput = document.createElement("input");
+            fileInput.type = "file";
+            fileInput.accept = ".tab";
+
+            fileInput.addEventListener("change", function (event) {
+                const file = event.target.files[0];
+                const reader = new FileReader();
+
+                reader.onload = function (event) {
+                    fullTab = event.target.result;
+                    const output = analyzeGuitarTab(fullTab);
+                    document.getElementById("outputContainer").innerText = JSON.stringify(output, null, 2);
+                    drawGuitarNeck(output.noteFrequencies);
+                };
+
+                reader.readAsText(file);
+            });
+
+            fileInput.click();
+        });
+
+
+        function processTabInput(input) {
+            const lines = input.split('\n');
+            let fullTab = '';
+            let tabLines = [];
+
+            for (const line of lines) {
+                if (line.startsWith('|') && line.includes('----')) {
+                    tabLines.push(line);
+                } else {
+                    if (tabLines.length === 6) {
+                        fullTab += tabLines.join('\n') + '\n';
+                        tabLines = [];
+                    }
+                }
+            }
+
+            // Add any remaining tabLines to the fullTab
+            if (tabLines.length === 6) {
+                fullTab += tabLines.join('\n') + '\n';
+            }
+
+            return fullTab;
+        }
+
+        const tuning = ['E', 'B', 'G', 'D', 'A', 'E'];
+        const chromaticScale = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'];
+
+        function noteAtFret(rootNote, frets) {
+            const rootIndex = chromaticScale.indexOf(rootNote);
+            const noteIndex = (rootIndex + frets) % chromaticScale.length;
+            return chromaticScale[noteIndex];
+        }
+
+        function parseTab(tab) {
+            const lines = tab.split('\n');
+            const noteOccurrences = {};
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const stringIndex = i % 6;
+
+                const regex = /(\d+)/g;
+                let match;
+
+                while ((match = regex.exec(line)) !== null) {
+                    const fret = parseInt(match[1], 10);
+                    const note = noteAtFret(tuning[stringIndex], fret);
+
+                    if (noteOccurrences.hasOwnProperty(note)) {
+                        noteOccurrences[note]++;
+                    } else {
+                        noteOccurrences[note] = 1;
+                    }
+                }
+            }
+
+            const totalNotes = Object.values(noteOccurrences).reduce((sum, count) => sum + count, 0);
+            const noteFrequencies = {};
+
+            for (const note in noteOccurrences) {
+                if (noteOccurrences.hasOwnProperty(note)) {
+                    noteFrequencies[note] = noteOccurrences[note] / totalNotes;
+                }
+            }
+
+            return {
+                uniqueNotes: Object.keys(noteOccurrences),
+                noteFrequencies: noteFrequencies
+            };
+        }
+
+        function analyzeGuitarTab(tab) {
+            return parseTab(tab);
+        }
+
+        function drawGuitarNeck(frequencies) {
+            const canvas = document.getElementById('guitarNeck');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const yOffset = 40;
+            const xOffset = 40;
+            const ySpacing = 100;
+            const xSpacing = 160;
+            const circleRadius = 16;
+            const stringColors = ['#0000ff'];
+
+            // for (let stringIndex = 0; stringIndex < tuning.length; stringIndex++) {
+            //     ctx.fillStyle = 'black';
+            //     ctx.textAlign = 'center';
+            //     ctx.textBaseline = 'middle';
+            //     ctx.fillText(tuning[stringIndex], xOffset, yOffset + (ySpacing * stringIndex));
+            // }
+
+
+            const numFrets = 22;
+            const fretSpacingRatio = .95;
+
+            let fretSpacing = xSpacing;
+
+            for (let fret = 0; fret <= numFrets; fret++) {
+                ctx.fillStyle = 'black';
+
+                let nextFretSpacing = xOffset + xSpacing * Math.pow(fretSpacingRatio, fret + 1);
+                ctx.beginPath();
+                ctx.moveTo(xOffset + fretSpacing, yOffset - ySpacing);
+                ctx.lineTo(xOffset + fretSpacing, yOffset + (ySpacing * (tuning.length - .5)));
+                ctx.stroke();
+                if (fret == 0) {
+                    ctx.beginPath();
+                    ctx.moveTo(xOffset + fretSpacing + 15, yOffset - ySpacing);
+                    ctx.lineTo(xOffset + fretSpacing + 15, yOffset + (ySpacing * (tuning.length - .5)));
+                    ctx.stroke();
+                }
+
+
+                for (let stringIndex = 0; stringIndex < tuning.length; stringIndex++) {
+                    const center = {
+                        x: fretSpacing,
+                        y: yOffset + (ySpacing * stringIndex)
+                    };
+                    const rootNote = tuning[stringIndex];
+                    const note = noteAtFret(rootNote, fret);
+                    const frequency = frequencies.hasOwnProperty(note) ? frequencies[note] : 0;
+
+                    ctx.beginPath();
+                    ctx.arc(center.x, center.y, circleRadius, 0, 2 * Math.PI, false);
+                    ctx.fillStyle = getColorStyle(frequency);
+                    ctx.fill();
+
+                    ctx.fillStyle = 'black';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(note, center.x, center.y);
+                }
+                ctx.fillStyle = '#eee';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                ctx.fillText(fret, fretSpacing, yOffset + (ySpacing * (tuning.length - 0.5)) + circleRadius * 1.5);
+
+                fretSpacing += xSpacing * Math.pow(fretSpacingRatio, fret);
+
+            }
+        }
+
+        function getColorStyle(frequency) {
+            const hue = Math.floor(frequency * 360);
+            let lightness = Math.floor(frequency * 100) + 30;
+            if (frequency == 0) {
+                lightness = 0
+            }
+            return `hsl(${hue}, 100%, ${lightness}%)`;
+        }
+        // // function getColorStyle(frequency) {
+        // //     const saturation = Math.floor(frequency * 100);
+        // //     const lightness = 50 + Math.floor(frequency * 50);
+        // //     return `hsl(0, ${saturation}%, ${lightness}%)`;
+        // // }
+        // function getColorStyle(frequency) {
+        //     const saturation = Math.floor(frequency * 100);
+        //     const lightness = 50 + Math.floor(frequency * 50);
+        //     return `hsl(240, ${saturation}%, ${lightness}%)`;
+        // }
+        // // function getColorStyle(frequency) {
+        // //     const red = Math.floor(frequency * 255);
+        //     const green = 255 - red;
+        //     return `rgb(${red}, ${green}, 0)`;
+        // }
+        // function getColorStyle(frequency) {
+        //     const blue = Math.floor(frequency * 255);
+        //     const green = 255 - blue;
+        //     return `rgb(0, ${green}, ${blue})`;
+        // }
+
+    </script>
+</body>
+
+</html>
