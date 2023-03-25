@@ -174,10 +174,17 @@
             let tabLines = [];
 
             for (const line of lines) {
-                if (line.startsWith('|') && line.includes('----')) {
+                if (isTabLine(line)) {
                     tabLines.push(line);
-                } else {
                     if (tabLines.length === 6) {
+                        fullTab += tabLines.join('\n') + '\n';
+                        tabLines = [];
+                    }
+                } else {
+                    if (tabLines.length > 0) {
+                        while (tabLines.length < 6) {
+                            tabLines.push(' '.repeat(tabLines[0].length));
+                        }
                         fullTab += tabLines.join('\n') + '\n';
                         tabLines = [];
                     }
@@ -185,11 +192,21 @@
             }
 
             // Add any remaining tabLines to the fullTab
-            if (tabLines.length === 6) {
+            if (tabLines.length > 0) {
+                while (tabLines.length < 6) {
+                    tabLines.push(' '.repeat(tabLines[0].length));
+                }
                 fullTab += tabLines.join('\n') + '\n';
             }
 
             return fullTab;
+        }
+
+
+        function isTabLine(line) {
+            return (/^([A-G](#|b)?|--|(\+?[A-Z]{1,2}))\|/.test(line)) && line.match(/-{1,}/g)
+            ||(/^([A-G](#|b)?|--|(\+?[A-Z]{1,2}))/.test(line)) && line.match(/-{1,}/g)
+            || line.startsWith('|') && line.includes('----');
         }
 
         const tuning = ['E', 'B', 'G', 'D', 'A', 'E'];
