@@ -205,8 +205,8 @@
 
         function isTabLine(line) {
             return (/^([A-G](#|b)?|--|(\+?[A-Z]{1,2}))\|/.test(line)) && line.match(/-{1,}/g)
-            ||(/^([A-G](#|b)?|--|(\+?[A-Z]{1,2}))/.test(line)) && line.match(/-{1,}/g)
-            || line.startsWith('|') && line.includes('----');
+                || (/^([A-G](#|b)?|--|(\+?[A-Z]{1,2}))/.test(line)) && line.match(/-{1,}/g)
+                || line.startsWith('|') && line.includes('----');
         }
 
         const tuning = ['E', 'B', 'G', 'D', 'A', 'E'];
@@ -261,6 +261,7 @@
         }
 
         function drawGuitarNeck(frequencies) {
+            const maxFrequency = getMaxFrequency(frequencies);
             const canvas = document.getElementById('guitarNeck');
             const ctx = canvas.getContext('2d');
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -312,7 +313,8 @@
 
                     ctx.beginPath();
                     ctx.arc(center.x, center.y, circleRadius, 0, 2 * Math.PI, false);
-                    ctx.fillStyle = getColorStyle(frequency);
+                    ctx.fillStyle = getColorStyle(frequency, maxFrequency);
+                    const colorStyle = getColorStyle(frequency, maxFrequency);
                     ctx.fill();
 
                     ctx.fillStyle = 'black';
@@ -330,12 +332,19 @@
             }
         }
 
-        function getColorStyle(frequency) {
-            const hue = Math.floor(frequency * 360);
-            let lightness = Math.floor(frequency * 100) + 30;
-            if (frequency == 0) {
-                lightness = 0
+        function getMaxFrequency(noteFrequencies) {
+            return Math.max(...Object.values(noteFrequencies));
+        }
+
+        function getColorStyle(frequency, maxFrequency) {
+            const normalizedFrequency = frequency / maxFrequency;
+            const hue = Math.floor(normalizedFrequency * 180);
+            let lightness = Math.floor(normalizedFrequency * 30) + 30;
+
+            if (frequency === 0) {
+                lightness = 0;
             }
+
             return `hsl(${hue}, 100%, ${lightness}%)`;
         }
         // // function getColorStyle(frequency) {
