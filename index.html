@@ -6,7 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.0/css/all.min.css"
         crossorigin="anonymous">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="FileSaver.min.js"></script>
+    <script type='text/javascript' src='midi-file-parser.js'></script>
+    <script type='text/javascript' src='midi.js'></script>
+
     <title>Guitar Tab Analyzer</title>
     <style>
         * {
@@ -101,6 +104,8 @@
             <input type="text" id="filename" value="guitar.tab">
             <button id="saveButton" title="Save"><span class="fas fa-save"></span></button>
             <button id="loadButton" title="Load"><i class="fas fa-folder-open"></i></button>
+            <button id="loadMidiButton" title="Load MIDI"><i class="fas fa-music"></i></button>
+
         </span>
     </div>
     <p>Paste your guitar tab:</p>
@@ -116,6 +121,7 @@
 
 
     <script>
+
         let fullTab = '';
 
         document.getElementById("addMoreButton").addEventListener("click", function () {
@@ -145,6 +151,40 @@
             downloadAnchorNode.remove();
         });
 
+
+        document.getElementById("loadMidiButton").addEventListener("click", function () {
+            const fileInput = document.createElement("input");
+            fileInput.type = "file";
+            fileInput.accept = ".mid";
+
+            fileInput.addEventListener("change", async function (event) {
+                const file = event.target.files[0];
+                const reader = new FileReader();
+
+                reader.onload = function (e) {
+                    try {
+                        const midiFile = MidiFile(e.target.result);
+                        if (midiFile && midiFile.tracks) {
+                            promptTrackSelection(midiFile.tracks).then(selectedTracks => {
+                                if (selectedTracks.length > 0) {
+                                    const output = analyzeMidiTracks(midiFile, selectedTracks);
+                                    document.getElementById("outputContainer").innerText = JSON.stringify(output, null, 2);
+                                    drawGuitarNeck(output.noteFrequencies);
+                                }
+                            });
+                        }
+                    } catch (error) {
+                        console.error("Error parsing MIDI file:", error);
+                        alert("Error parsing MIDI file. Please ensure the file is a valid MIDI file.");
+                    }
+                };
+
+                reader.readAsBinaryString(file);
+            });
+
+            fileInput.click();
+        });
+
         document.getElementById("loadButton").addEventListener("click", function () {
             const fileInput = document.createElement("input");
             fileInput.type = "file";
@@ -166,6 +206,204 @@
 
             fileInput.click();
         });
+
+        async function getNoteOccurrencesFromMidi(midiFile) {
+            const noteOccurrences = {};
+            const tracks = midiFile.tracks;
+            const trackSelection = await promptTrackSelection(tracks);
+
+            for (const trackIndex of trackSelection) {
+                const track = tracks[trackIndex];
+                for (const event of track) {
+                    console.log(event); // Add this line to log the events
+
+                    if (event.type === "channel" && event.subtype === "noteOn") {
+                        const noteNumber = event.noteNumber;
+                        const noteName = getNoteNameFromMidiNumber(noteNumber);
+
+                        if (noteOccurrences.hasOwnProperty(noteName)) {
+                            noteOccurrences[noteName]++;
+                        } else {
+                            noteOccurrences[noteName] = 1;
+                        }
+                    }
+                }
+            }
+
+            return noteOccurrences;
+        }
+        function analyzeMidiTracks(midiFile, selectedTracks) {
+            const noteOccurrences = {};
+
+            for (const trackIndex of selectedTracks) {
+                const track = midiFile.tracks[trackIndex];
+                for (const event of track) {
+                    console.log(event); // Add this line to log the events
+                    if (event.type === "channel" && event.subtype === "noteOn") {
+                        const noteNumber = event.noteNumber;
+                        const noteName = getNoteNameFromMidiNumber(noteNumber);
+
+                        if (noteOccurrences.hasOwnProperty(noteName)) {
+                            noteOccurrences[noteName]++;
+                        } else {
+                            noteOccurrences[noteName] = 1;
+                        }
+                    }
+                }
+            }
+
+            const totalNotes = Object.values(noteOccurrences).reduce((sum, count) => sum + count, 0);
+            const noteFrequencies = {};
+
+            for (const note in noteOccurrences) {
+                if (noteOccurrences.hasOwnProperty(note)) {
+                    noteFrequencies[note] = noteOccurrences[note] / totalNotes;
+                }
+            }
+
+            return {
+                uniqueNotes: Object.keys(noteOccurrences),
+                noteFrequencies: noteFrequencies
+            };
+        }
+
+        function getNoteNameFromMidiNumber(midiNumber) {
+            const octave = Math.floor(midiNumber / 12) - 1;
+            const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+            const noteIndex = midiNumber % 12;
+            return noteNames[noteIndex];// + octave;
+        }
+
+        function getGMInstrumentName(instrumentNumber) {
+            const gmInstruments = [
+                // Piano
+                "Acoustic Grand Piano", "Bright Acoustic Piano", "Electric Grand Piano",
+                "Honky-tonk Piano", "Electric Piano 1", "Electric Piano 2",
+                "Harpsichord", "Clavinet",
+                // Chromatic Percussion
+                "Celesta", "Glockenspiel", "Music Box", "Vibraphone", "Marimba", "Xylophone",
+                "Tubular Bells", "Dulcimer",
+                // Organ
+                "Drawbar Organ", "Percussive Organ", "Rock Organ", "Church Organ", "Reed Organ",
+                "Accordion", "Harmonica", "Tango Accordion",
+                // Guitar
+                "Acoustic Guitar (nylon)", "Acoustic Guitar (steel)", "Electric Guitar (jazz)",
+                "Electric Guitar (clean)", "Electric Guitar (muted)", "Overdriven Guitar",
+                "Distortion Guitar", "Guitar Harmonics",
+                // Bass
+                "Acoustic Bass", "Electric Bass (finger)", "Electric Bass (pick)", "Fretless Bass",
+                "Slap Bass 1", "Slap Bass 2", "Synth Bass 1", "Synth Bass 2",
+                // Strings
+                "Violin", "Viola", "Cello", "Contrabass", "Tremolo Strings", "Pizzicato Strings",
+                "Orchestral Harp", "Timpani",
+                // Ensemble
+                "String Ensemble 1", "String Ensemble 2", "Synth Strings 1", "Synth Strings 2",
+                "Choir Aahs", "Voice Oohs", "Synth Choir", "Orchestra Hit",
+                // Brass
+                "Trumpet", "Trombone", "Tuba", "Muted Trumpet", "French Horn", "Brass Section",
+                "Synth Brass 1", "Synth Brass 2",
+                // Reed
+                "Soprano Sax", "Alto Sax", "Tenor Sax", "Baritone Sax",
+                "Oboe", "English Horn", "Bassoon", "Clarinet",
+                // Pipe
+                "Piccolo", "Flute", "Recorder", "Pan Flute", "Blown Bottle", "Shakuhachi", "Whistle", "Ocarina",
+                // Synth Lead
+                "Square Lead", "Sawtooth Lead", "Calliope Lead", "Chiff Lead", "Charang Lead", "Voice Lead", "Fifths Lead", "Bass + Lead",
+                // Synth Pad
+                "New Age Pad", "Warm Pad", "Polysynth Pad", "Choir Pad", "Bowed Pad", "Metallic Pad", "Halo Pad", "Sweep Pad",
+                // Synth Effects
+                "Rain", "Soundtrack", "Crystal", "Atmosphere", "Brightness", "Goblins", "Echoes", "Sci-Fi",
+                // Ethnic
+                "Sitar", "Banjo", "Shamisen", "Koto", "Kalimba", "Bagpipe", "Fiddle", "Shanai",
+                // Percussive
+                "Tinkle Bell", "Agogo", "Steel Drums", "Woodblock", "Taiko Drum", "Melodic Tom", "Synth Drum", "Reverse Cymbal",
+                // Sound Effects
+                "Guitar Fret Noise", "Breath Noise", "Seashore", "Bird Tweet", "Telephone Ring", "Helicopter", "Applause", "Gunshot"];
+
+
+            return gmInstruments[instrumentNumber];
+        }
+
+        async function promptTrackSelection(tracks) {
+            const trackNames = tracks.map((track, index) => {
+                const instrumentChangeEvent = track.find(event => event.type === "channel" && event.subtype === "programChange");
+                const instrumentNumber = instrumentChangeEvent ? instrumentChangeEvent.programNumber : 0;
+                const instrumentName = getGMInstrumentName(instrumentNumber);
+                return instrumentName;
+            });
+
+            return new Promise(resolve => {
+                const modal = document.createElement("div");
+                modal.style.position = "fixed";
+                modal.style.top = "0";
+                modal.style.left = "0";
+                modal.style.width = "100%";
+                modal.style.height = "100%";
+                modal.style.backgroundColor = "rgba(0, 0, 0, 0.8)";
+                modal.style.display = "flex";
+                modal.style.justifyContent = "center";
+                modal.style.alignItems = "center";
+                modal.style.zIndex = "999";
+
+                const modalContent = document.createElement("div");
+                modalContent.style.backgroundColor = "#fff";
+                modalContent.style.padding = "2rem";
+                modalContent.style.borderRadius = "4px";
+                modalContent.style.width = "50%";
+                modalContent.style.textAlign = "center";
+                modalContent.style.color = "#000";
+
+                const modalTitle = document.createElement("h2");
+                modalTitle.innerText = "Select MIDI Tracks";
+                modalContent.appendChild(modalTitle);
+
+                const trackList = document.createElement("div");
+                trackNames.forEach((name, index) => {
+                    const trackCheckbox = document.createElement("input");
+                    trackCheckbox.type = "checkbox";
+                    trackCheckbox.id = `track-${index}`;
+                    trackCheckbox.name = `track-${index}`;
+                    trackCheckbox.value = index;
+                    trackCheckbox.checked = false;
+
+                    const trackLabel = document.createElement("label");
+                    trackLabel.htmlFor = `track-${index}`;
+                    trackLabel.innerText = name;
+
+                    trackList.appendChild(trackCheckbox);
+                    trackList.appendChild(trackLabel);
+                    trackList.appendChild(document.createElement("br"));
+                });
+                modalContent.appendChild(trackList);
+
+                const submitButton = document.createElement("button");
+                submitButton.innerText = "Submit";
+                submitButton.addEventListener("click", function () {
+                    const selectedTracks = [];
+                    for (let i = 0; i < trackNames.length; i++) {
+                        const checkbox = document.getElementById(`track-${i}`);
+                        if (checkbox.checked) {
+                            selectedTracks.push(i);
+                        }
+                    }
+                    modal.remove();
+                    resolve(selectedTracks);
+                });
+                modalContent.appendChild(submitButton);
+
+                const cancelButton = document.createElement("button");
+                cancelButton.innerText = "Cancel";
+                cancelButton.addEventListener("click", function () {
+                    modal.remove();
+                    resolve([]);
+                });
+                modalContent.appendChild(cancelButton);
+
+                modal.appendChild(modalContent);
+                document.body.appendChild(modal);
+            });
+        }
+
 
 
         function processTabInput(input) {
